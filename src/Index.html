@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; margin: 0; padding: 12px; color: #222; background: #f6f7f9; font-size: 14px; }
+    .wrap { max-width: 640px; margin: 0 auto; }
+    h2 { font-size: 15px; margin: 18px 0 8px; }
+    .card { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .totals { display: flex; gap: 8px; }
+    .totals .card { flex: 1; text-align: center; }
+    .totals .label { font-size: 12px; color: #666; }
+    .totals .val { font-size: 18px; font-weight: bold; margin-top: 4px; }
+    .plus { color: #1a7f37; } .minus { color: #cf222e; }
+    label { display: block; font-size: 12px; color: #555; margin: 8px 0 3px; }
+    input, select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+    .row { display: flex; gap: 8px; } .row > div { flex: 1; }
+    .types { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 4px; }
+    .types button { padding: 8px 4px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .types button.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .submit { width: 100%; margin-top: 12px; padding: 10px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; font-size: 15px; cursor: pointer; }
+    .submit:disabled { opacity: .5; }
+    .item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .item:last-child { border-bottom: 0; }
+    .sub { font-size: 12px; color: #777; }
+    .del { background: none; border: 0; color: #999; cursor: pointer; font-size: 16px; margin-left: 6px; }
+    .msg { margin-top: 8px; font-size: 13px; min-height: 1em; }
+    .empty { color: #999; text-align: center; padding: 8px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="totals">
+    <div class="card"><div class="label">貸付残高（もらう）</div><div class="val plus" id="totalLent">-</div></div>
+    <div class="card"><div class="label">借入残高（返す）</div><div class="val minus" id="totalBorrowed">-</div></div>
+  </div>
+
+  <h2>✏️ 記録する</h2>
+  <div class="card">
+    <label>種別</label>
+    <div class="types" id="types"></div>
+    <div class="row">
+      <div><label>相手</label><input id="person" list="people" placeholder="例: 田中さん"></div>
+      <div><label>金額（円）</label><input id="amount" type="number" min="1" inputmode="numeric"></div>
+    </div>
+    <datalist id="people"></datalist>
+    <div class="row">
+      <div><label>日付</label><input id="date" type="date"></div>
+      <div><label>メモ</label><input id="memo" placeholder="任意"></div>
+    </div>
+    <button class="submit" id="submit" onclick="submitForm()">登録</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <h2>👥 相手ごとの残高</h2>
+  <div class="card" id="summary"><div class="empty">読み込み中…</div></div>
+
+  <h2>📜 履歴</h2>
+  <div class="card" id="records"><div class="empty">読み込み中…</div></div>
+</div>
+
+<script>
+  let selectedType = '貸した';
+
+  const yen = n => '¥' + Math.round(n).toLocaleString();
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const $ = id => document.getElementById(id);
+
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function renderTypes(types) {
+    $('types').innerHTML = types.map(t =>
+      `<button type="button" class="${t === selectedType ? 'on' : ''}" onclick="selectType('${t}')">${t}</button>`).join('');
+  }
+  function selectType(t) {
+    selectedType = t;
+    document.querySelectorAll('#types button').forEach(b => b.classList.toggle('on', b.textContent === t));
+  }
+
+  function render(data) {
+    $('totalLent').textContent = yen(data.totalLent);
+    $('totalBorrowed').textContent = yen(data.totalBorrowed);
+    renderTypes(data.types);
+
+    $('people').innerHTML = data.summary.map(s => `<option value="${esc(s.person)}">`).join('');
+
+    const active = data.summary.filter(s => s.balance !== 0 || s.lent !== 0 || s.borrowed !== 0);
+    $('summary').innerHTML = active.length ? active.map(s => {
+      const cls = s.balance > 0 ? 'plus' : s.balance < 0 ? 'minus' : '';
+      const note = s.balance > 0 ? '返してもらう' : s.balance < 0 ? '返す' : '精算済み';
+      return `<div class="item"><div><b>${esc(s.person)}</b><div class="sub">${note}</div></div>
+              <div class="${cls}"><b>${yen(Math.abs(s.balance))}</b></div></div>`;
+    }).join('') : '<div class="empty">残高はありません</div>';
+
+    $('records').innerHTML = data.records.length ? data.records.map(r => {
+      const cls = (r.type === '貸した' || r.type === '返した') ? 'minus' : 'plus';
+      const sign = cls === 'minus' ? '-' : '+';
+      return `<div class="item">
+        <div><b>${esc(r.person)}</b> <span class="sub">${esc(r.type)}</span>
+          <div class="sub">${esc(r.date)}${r.memo ? ' ・ ' + esc(r.memo) : ''}</div></div>
+        <div><span class="${cls}">${sign}${yen(r.amount)}</span>
+          <button class="del" title="削除" onclick="removeRecord('${esc(r.id)}')">×</button></div>
+      </div>`;
+    }).join('') : '<div class="empty">まだ記録がありません</div>';
+  }
+
+  function showError(e) {
+    $('msg').innerHTML = '<span class="minus">' + esc(e.message || e) + '</span>';
+    $('submit').disabled = false;
+  }
+
+  function submitForm() {
+    $('submit').disabled = true;
+    $('msg').textContent = '登録中…';
+    google.script.run
+      .withSuccessHandler(data => {
+        render(data);
+        $('amount').value = '';
+        $('memo').value = '';
+        $('msg').innerHTML = '<span class="plus">登録しました</span>';
+        $('submit').disabled = false;
+      })
+      .withFailureHandler(showError)
+      .addRecord({
+        type: selectedType,
+        person: $('person').value,
+        amount: $('amount').value,
+        date: $('date').value,
+        memo: $('memo').value,
+      });
+  }
+
+  function removeRecord(id) {
+    if (!confirm('この記録を削除しますか？')) return;
+    google.script.run.withSuccessHandler(render).withFailureHandler(showError).deleteRecord(id);
+  }
+
+  $('date').value = today();
+  google.script.run.withSuccessHandler(render).withFailureHandler(showError).getData();
+</script>
+</body>
+</html>
