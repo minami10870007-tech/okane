@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>okane — 貸し借り管理</title>
+  <meta name="description" content="誰にいくら貸した・借りたかを記録する、シンプルな貸し借り管理アプリ">
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="okane">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">本文へ移動</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9"/><path d="M10 8l6 8 6-8M16 16v9M11.5 17.5h9M11.5 21.5h9"/></svg>
+      <div>
+        <h1>okane</h1>
+        <p class="brand-sub">貸し借りメモ</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="mode-badge" id="modeBadge" hidden>デモ</span>
+      <button class="icon-btn" id="refreshBtn" type="button" aria-label="最新の情報に更新">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="layout">
+    <!-- 初回：接続前の案内 -->
+    <section class="card onboarding" id="onboarding" hidden>
+      <div class="onboarding-art" aria-hidden="true">¥</div>
+      <h2><span class="nw">はじめに、</span><span class="nw">スプレッドシートと</span><span class="nw">接続しましょう</span></h2>
+      <p>データはあなたのGoogleスプレッドシートに保存されます。GASで発行した <b class="nw">API URL</b> と <b class="nw">トークン</b> を設定してください。</p>
+      <div class="onboarding-actions">
+        <button class="btn btn-primary" id="onboardConnect" type="button">接続を設定する</button>
+        <button class="btn btn-ghost" id="onboardDemo" type="button">デモで試す</button>
+      </div>
+    </section>
+
+    <div class="col col-left" id="appLeft">
+      <!-- 残高サマリー -->
+      <section class="hero" aria-labelledby="heroLabel">
+        <p class="hero-label" id="heroLabel">差し引き残高</p>
+        <p class="hero-amount" id="netAmount" aria-live="polite"><span class="skeleton skeleton-xl"></span></p>
+        <p class="hero-caption" id="netCaption">&nbsp;</p>
+        <dl class="hero-stats">
+          <div>
+            <dt><span class="dot dot-pos"></span>貸している</dt>
+            <dd id="totalLent"><span class="skeleton"></span></dd>
+          </div>
+          <div>
+            <dt><span class="dot dot-neg"></span>借りている</dt>
+            <dd id="totalBorrowed"><span class="skeleton"></span></dd>
+          </div>
+        </dl>
+      </section>
+
+      <!-- 入力フォーム -->
+      <section class="card" aria-labelledby="formTitle">
+        <h2 class="card-title" id="formTitle">記録する</h2>
+        <form id="recordForm" novalidate>
+          <fieldset class="types">
+            <legend class="field-label">種別</legend>
+            <div class="types-grid">
+              <label class="type-opt" data-tone="neg">
+                <input type="radio" name="type" value="貸した" checked>
+                <span class="type-body"><span class="type-name">貸した</span><span class="type-desc">お金を渡した</span></span>
+              </label>
+              <label class="type-opt" data-tone="pos">
+                <input type="radio" name="type" value="返してもらった">
+                <span class="type-body"><span class="type-name">返してもらった</span><span class="type-desc">お金が戻った</span></span>
+              </label>
+              <label class="type-opt" data-tone="pos">
+                <input type="radio" name="type" value="借りた">
+                <span class="type-body"><span class="type-name">借りた</span><span class="type-desc">お金を受けた</span></span>
+              </label>
+              <label class="type-opt" data-tone="neg">
+                <input type="radio" name="type" value="返した">
+                <span class="type-body"><span class="type-name">返した</span><span class="type-desc">お金を戻した</span></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="field">
+            <label class="field-label" for="amount">金額</label>
+            <div class="amount-wrap">
+              <span class="amount-prefix" aria-hidden="true">¥</span>
+              <input id="amount" name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="0" enterkeyhint="next" required>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="person">相手</label>
+            <input id="person" name="person" type="text" list="people" autocomplete="off" placeholder="例：田中さん" maxlength="50" enterkeyhint="next" required>
+            <datalist id="people"></datalist>
+            <div class="chips" id="personChips" aria-label="最近の相手"></div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label class="field-label" for="date">日付</label>
+              <input id="date" name="date" type="date" required>
+            </div>
+            <div class="field">
+              <label class="field-label" for="memo">メモ <span class="optional">任意</span></label>
+              <input id="memo" name="memo" type="text" placeholder="例：ランチ代" maxlength="200" enterkeyhint="done">
+            </div>
+          </div>
+
+          <p class="form-error" id="formError" role="alert" hidden></p>
+
+          <button class="btn btn-primary btn-block" id="submitBtn" type="submit">
+            <span class="btn-label">記録する</span>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <div class="col col-right" id="appRight">
+      <!-- 相手ごとの残高 -->
+      <section class="card" aria-labelledby="peopleTitle">
+        <div class="card-head">
+          <h2 class="card-title" id="peopleTitle">相手ごと</h2>
+          <span class="card-meta" id="peopleMeta"></span>
+        </div>
+        <ul class="list" id="summary" aria-busy="true">
+          <li class="list-skeleton"><span class="skeleton"></span></li>
+          <li class="list-skeleton"><span class="skeleton"></span></li>
+          <li class="list-skeleton"><span class="skeleton"></span></li>
+        </ul>
+      </section>
+
+      <!-- 履歴 -->
+      <section class="card" aria-labelledby="historyTitle">
+        <div class="card-head">
+          <h2 class="card-title" id="historyTitle">履歴</h2>
+          <button class="filter-chip" id="filterChip" type="button" hidden>
+            <span id="filterName"></span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            <span class="sr-only">の絞り込みを解除</span>
+          </button>
+        </div>
+        <div id="records" aria-busy="true">
+          <div class="list-skeleton"><span class="skeleton"></span></div>
+          <div class="list-skeleton"><span class="skeleton"></span></div>
+          <div class="list-skeleton"><span class="skeleton"></span></div>
+        </div>
+        <button class="btn btn-ghost btn-block" id="moreBtn" type="button" hidden>もっと見る</button>
+      </section>
+    </div>
+  </main>
+
+  <!-- 設定ダイアログ -->
+  <dialog class="sheet" id="settingsDialog" aria-labelledby="settingsTitle">
+    <form method="dialog" class="sheet-inner" id="settingsForm" novalidate>
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <h2 id="settingsTitle">接続設定</h2>
+      <p class="sheet-desc">スプレッドシートのメニュー「💰 お金管理 → Netlify連携の設定を表示」で確認できます。</p>
+      <div class="field">
+        <label class="field-label" for="apiUrl">API URL</label>
+        <input id="apiUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+      </div>
+      <div class="field">
+        <label class="field-label" for="apiToken">APIトークン</label>
+        <input id="apiToken" type="password" autocomplete="off" spellcheck="false" placeholder="32文字の英数字">
+      </div>
+      <p class="form-error" id="settingsError" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost" value="cancel" formnovalidate type="submit">キャンセル</button>
+        <button class="btn btn-primary" id="settingsSave" value="save" type="submit">
+          <span class="btn-label">接続して保存</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="sheet-footer">
+        <button class="link-btn" id="demoToggle" type="button">デモで試す</button>
+        <button class="link-btn link-danger" id="disconnectBtn" type="button">接続を解除</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p class="noscript">このアプリを使うにはJavaScriptを有効にしてください。</p></noscript>
+</body>
+</html>
