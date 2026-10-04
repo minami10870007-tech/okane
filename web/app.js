@@ -53,7 +53,8 @@ function toast(msg, isError) {
 async function callApi(action, payload, cfg = config) {
   if (cfg.demo) return demoApi(action, payload);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 25000);
+  // GAS は初回（コールドスタート）に数十秒かかることがあるので長めに待つ
+  const timer = setTimeout(() => ctrl.abort(), 60000);
   try {
     const res = await fetch(cfg.url, {
       method: 'POST',
@@ -71,7 +72,7 @@ async function callApi(action, payload, cfg = config) {
     if (!json.ok) throw new Error(json.error || 'エラーが発生しました');
     return json.data;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('通信がタイムアウトしました');
+    if (e.name === 'AbortError') throw new Error('通信がタイムアウトしました。API URL をブラウザで直接開いて応答を確認してください');
     if (e instanceof TypeError) throw new Error('接続できませんでした。URLとネットワークを確認してください');
     throw e;
   } finally {
